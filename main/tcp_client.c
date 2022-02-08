@@ -21,20 +21,18 @@
 #include "addr_from_stdin.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
+#include "lwip/dns.h"
 
 
-#if defined(CONFIG_EXAMPLE_IPV4)
-#define HOST_IP_ADDR "1.58.62.16"
-#elif defined(CONFIG_EXAMPLE_IPV6)
-#define HOST_IP_ADDR CONFIG_EXAMPLE_IPV6_ADDR
-#else
-#define HOST_IP_ADDR ""
-#endif
 
-#define PORT 10240
+#define HOST_IP_ADDR "1.58.62.16"   //服务器地址
+//#define HOST_IP_ADDR "10.52.251.164"   //测试用本地地址
+
+#define PORT 10240  //服务器端口号
+//#define PORT   777  //测试用本地端口号
 
 static const char *TAG = "example";
-static const char *payload = "Echo";
+static const char *payload = "Echo\n";
 
 /* 宏定义WiFi名称和密码 */
 #define MY_WIFI_SSID    "mix2s"
@@ -60,25 +58,12 @@ static void tcp_client_task(void *pvParameters)
     int ip_protocol = 0;
 
     while (1) {
-#if defined(CONFIG_EXAMPLE_IPV4)
         struct sockaddr_in dest_addr;
         dest_addr.sin_addr.s_addr = inet_addr(host_ip);
         dest_addr.sin_family = AF_INET;
         dest_addr.sin_port = htons(PORT);
         addr_family = AF_INET;
-        ip_protocol = IPPROTO_IP;
-#elif defined(CONFIG_EXAMPLE_IPV6)
-        struct sockaddr_in6 dest_addr = { 0 };
-        inet6_aton(host_ip, &dest_addr.sin6_addr);
-        dest_addr.sin6_family = AF_INET6;
-        dest_addr.sin6_port = htons(PORT);
-        dest_addr.sin6_scope_id = esp_netif_get_netif_impl_index(EXAMPLE_INTERFACE);
-        addr_family = AF_INET6;
-        ip_protocol = IPPROTO_IPV6;
-#elif defined(CONFIG_EXAMPLE_SOCKET_IP_INPUT_STDIN)
-        struct sockaddr_storage dest_addr = { 0 };
-        ESP_ERROR_CHECK(get_addr_from_stdin(PORT, SOCK_STREAM, &ip_protocol, &addr_family, &dest_addr));
-#endif                                                                                                                                                                                                                                                                                                                                                                   
+        ip_protocol = IPPROTO_IP;                                                                                                                                                                                                                                                                                                                                                              
         int sock =  socket(addr_family, SOCK_STREAM, ip_protocol);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
