@@ -49,6 +49,7 @@ static EventGroupHandle_t wifi_event_group_handler;
 static void event_handler(void* arg, esp_event_base_t event_base,int32_t event_id, void* event_data);
 void wifi_init_sta(void);
 // static void smartconfig_init_start(void);
+static void dns_client_task(void *pvParameters);
 
 static void tcp_client_task(void *pvParameters)
 {
@@ -98,7 +99,7 @@ static void tcp_client_task(void *pvParameters)
                 ESP_LOGI(TAG, "%s", rx_buffer);
             }
 
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            vTaskDelay(20000 / portTICK_PERIOD_MS);
         }
 
         if (sock != -1) {
@@ -124,7 +125,8 @@ void app_main(void)
     // example_connect("mix2s", "zxcvbnm.");
     wifi_init_sta();
 
-    xTaskCreate(tcp_client_task, "tcp_client", 4096, NULL, 5, NULL);
+    //xTaskCreate(tcp_client_task, "tcp_client", 4096, NULL, 5, NULL);
+    xTaskCreate(dns_client_task, "dns_client", 4096, NULL, 5, NULL);
 }
 
 void wifi_init_sta(void)
@@ -300,3 +302,74 @@ static void event_handler(void* arg, esp_event_base_t event_base,int32_t event_i
 //         esp_smartconfig_stop(); /* 关闭智能配网 */
 //     }
 // }
+
+static void dns_client_task(void *pvParameters)
+{
+    // 1、定义一个hints结构体，用来设置函数的getaddrinfo()的使用方式
+    const struct addrinfo hints = {
+        .ai_family = AF_INET,           /* 指定返回地址的协议簇，AF_INET(IPv4)、AF_INET6(IPv6)、AF_UNSPEC(IPv4 and IPv6)*/
+        .ai_socktype = SOCK_STREAM,     /* 设定返回地址的socket类型，流式套接字 */     
+    };
+
+    // 2、使用getaddrinfo()开始解析,定义一个struct addrinfo结构体指针，用来获取解析结果
+    struct addrinfo *result;
+    int err;
+    err = getaddrinfo("tyw-server.synology.me", "10240", &hints, &result);
+    if(err != 0)        /* 返回值不为0，函数执行失败*/
+        printf("getaddrinfo err: %d \n",err);
+
+	// 3、将获取到的信息打印出来
+    char buf[100];                      /* 用来存储IP地址字符串 */
+    struct sockaddr_in  *ipv4 = NULL;   /* IPv4地址结构体指针 */
+    if(result->ai_family == AF_INET) 
+    {
+        ipv4 = (struct sockaddr_in *)result->ai_addr;
+        inet_ntop(result->ai_family, &ipv4->sin_addr, buf, sizeof(buf));
+        printf("[IPv4]%s [port]%d \n",buf,ntohs(ipv4->sin_port));
+    }
+    else
+        printf("got IPv4 err !!!\n");
+
+    // 4、使用socket()函数获取一个TCP客户端socket文件描述符
+	int tcp_client = socket(AF_INET, SOCK_STREAM, 0);
+    if (-1 == tcp_client)
+	{
+		perror("socket");
+		return ;
+	}
+
+    // 5、链接到服务器
+    err = connect(tcp_client, (const struct sockaddr *)ipv4, sizeof(*ipv4));
+    if (err < 0)
+		perror("connect err");
+    else
+	    printf("connect success, ret = %d.\n", err);
+    
+    // 6. 发送GET请求
+	char sendbuf[]={"GET / HTTP/1.1\n\n"};
+	err = send(tcp_client, sendbuf, strlen(sendbuf),0);
+    if (err < 0)
+		perror("send err");
+    else
+        printf("send size %d \n",err);
+    
+
+    // 7、等待接收服务端发送过来的数据，最大接收100个字节
+    char recvbuf[100] = {0};
+    err = recv(tcp_client, recvbuf, sizeof(recvbuf), 0);
+    if (err < 0)
+		perror("recv err");
+    else
+        printf("recv size %d \n",err);
+
+    // 8、将接收到的数据打印出来
+    printf("Recvdate: \n%s \n",recvbuf);
+
+    // 9、关闭套接字
+    close(tcp_client);
+
+    // 10、释放addrinfo 内存
+    freeaddrinfo(result);     
+
+    vTaskDelete(NULL);
+}
